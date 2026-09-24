@@ -33,6 +33,13 @@ ETATS = {
 def calculer_checksum(trame_sans_checksum):
     return sum(trame_sans_checksum) & 0xFF
 
+def verifier_checksum(trame):
+    """Retourne True si le checksum de la trame CNSP est valide."""
+    if len(trame) != FRAME_SIZE:
+        return False
+    return trame[-1] == calculer_checksum(trame[:-1])
+
+
 def decoder_trame(trame):
     if len(trame) != FRAME_SIZE:
         return None
@@ -51,9 +58,7 @@ def decoder_trame(trame):
     if version != VERSION:
         return None
 
-    checksum_calcule = calculer_checksum(trame[:6])
-
-    if checksum != checksum_calcule:
+    if not verifier_checksum(trame):
         return None
 
     return {
