@@ -7,6 +7,13 @@ The project combines an **STM32 microcontroller**, a custom binary communication
 > This repository presents an academic prototype based on representative logical equipment states. It does not contain operational airport data.
 
 ---
+## 🖥️ Supervision Dashboard
+
+The Python application provides real-time visualization of CNS equipment states, UART communication status, CNSP protocol integrity and event history.
+
+> The screenshot below was taken without the STM32 board connected, which explains the communication loss indicator displayed by the application.
+
+![CNS Supervision Dashboard](tableau%20de%20bord%20de%20supervision.png)
 
 ## 🎯 Project Objective
 
