@@ -7,19 +7,21 @@ import sys
 import csv
 from datetime import datetime
 
-from cnsp_parser import decoder_trame, FRAME_SIZE, START_BYTE
+from cnsp_parser import decoder_trame, verifier_checksum, FRAME_SIZE, START_BYTE
 from database import init_database, ajouter_evenement, lire_historique
 
 # ================= CONFIG =================
 
-PORT = "COM7"
+PORT = os.getenv("CNSP_SERIAL_PORT", "COM7")
 BAUDRATE = 115200
 COMM_TIMEOUT_MS = 5000
-LOGO_FILE = "onda_logo.png"
+LOGO_FILE = "project_logo.png"
 
-AUTH_USER = "permanent"
-AUTH_PASSWORD = "esa123"
-CURRENT_USER = "Permanent ESA"
+# Compte de démonstration uniquement. Les valeurs peuvent être remplacées
+# par des variables d'environnement sans modifier le code source.
+AUTH_USER = os.getenv("CNSP_DEMO_USER", "demo")
+AUTH_PASSWORD = os.getenv("CNSP_DEMO_PASSWORD", "demo")
+CURRENT_USER = os.getenv("CNSP_DISPLAY_USER", "Demo User")
 
 SYSTEMES = ["DME", "ILS_LOCALIZER", "GLIDE_SLOPE", "VHF", "ADS_B", "ONDULEUR"]
 
@@ -42,10 +44,10 @@ TYPES = {
 }
 
 FREQS = {
-    "DME": "CH 84X",
-    "ILS_LOCALIZER": "110.10 MHz",
-    "GLIDE_SLOPE": "334.70 MHz",
-    "VHF": "118.50 MHz",
+    "DME": "Canal de démonstration",
+    "ILS_LOCALIZER": "Fréquence représentative",
+    "GLIDE_SLOPE": "Fréquence représentative",
+    "VHF": "Fréquence représentative",
     "ADS_B": "1090 MHz",
     "ONDULEUR": "230 VAC"
 }
@@ -92,7 +94,7 @@ def resource_path(relative_path):
 # ================= ROOT =================
 
 root = tk.Tk()
-root.title("ONDA ESA - Supervision CNS")
+root.title("CNS Supervision Prototype")
 root.geometry("1500x930")
 root.configure(bg=BG)
 root.withdraw()
@@ -114,7 +116,7 @@ except Exception:
 
 def show_about():
     about = tk.Toplevel(root)
-    about.title("À propos - Supervision CNS")
+    about.title("À propos - Prototype de supervision CNS")
     about.geometry("520x520")
     about.configure(bg=BG)
     about.resizable(False, False)
@@ -131,7 +133,7 @@ def show_about():
     if LOGO_FULL is not None:
         tk.Label(panel, image=LOGO_FULL, bg=PANEL).pack(pady=(18, 8))
     else:
-        tk.Label(panel, text="ONDA ESA", fg="white", bg=PANEL, font=("Arial", 24, "bold")).pack(pady=(24, 8))
+        tk.Label(panel, text="CNS PROTOTYPE", fg="white", bg=PANEL, font=("Arial", 24, "bold")).pack(pady=(24, 8))
 
     tk.Label(panel, text="Plateforme de supervision CNS", fg="white", bg=PANEL, font=("Arial", 16, "bold")).pack(pady=(4, 8))
     tk.Label(panel, text="Version 1.0", fg="#60a5fa", bg=PANEL, font=("Consolas", 11, "bold")).pack()
@@ -143,7 +145,8 @@ def show_about():
         "Base de données : SQLite\n"
         "Interface : Application Windows Python/Tkinter\n\n"
         "Développé par : Hiba Sebbai\n"
-        "Stage ONDA - Aéroport Fès-Saïss\n"
+        "Prototype réalisé dans le cadre d’un stage ONDA - Aéroport Fès-Saïss\n"
+        "Données de démonstration / états représentatifs\n"
         "Année : 2026"
     )
 
@@ -310,7 +313,7 @@ def exporter_historique_pdf():
         c.setFont("Helvetica", 10)
         c.drawString(2 * cm, y, f"Généré le : {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
         y -= 0.5 * cm
-        c.drawString(2 * cm, y, "Application : Plateforme de supervision CNS - Projet de stage ONDA")
+        c.drawString(2 * cm, y, "Application : Prototype de supervision CNS")
         y -= 0.9 * cm
 
         c.setFont("Helvetica-Bold", 9)
@@ -491,10 +494,10 @@ label_status_comm.pack(side="right", padx=15)
 if LOGO_SIDEBAR is not None:
     tk.Label(sidebar, image=LOGO_SIDEBAR, bg=PANEL).pack(anchor="w", padx=22, pady=(20, 6))
 else:
-    tk.Label(sidebar, text="ONDA", fg="white", bg=PANEL, font=("Arial", 26, "bold")).pack(anchor="w", padx=22, pady=(22, 0))
+    tk.Label(sidebar, text="CNS", fg="white", bg=PANEL, font=("Arial", 26, "bold")).pack(anchor="w", padx=22, pady=(22, 0))
 
-tk.Label(sidebar, text="ESA · Supervision CNS", fg=MUTED, bg=PANEL, font=("Arial", 11, "bold")).pack(anchor="w", padx=24, pady=(0, 4))
-tk.Label(sidebar, text="Aéroport Fès-Saïss · GMFF", fg="#64748b", bg=PANEL, font=("Arial", 10)).pack(anchor="w", padx=24, pady=(0, 28))
+tk.Label(sidebar, text="Prototype · Supervision CNS", fg=MUTED, bg=PANEL, font=("Arial", 11, "bold")).pack(anchor="w", padx=24, pady=(0, 4))
+tk.Label(sidebar, text="Données représentatives de démonstration", fg="#64748b", bg=PANEL, font=("Arial", 10)).pack(anchor="w", padx=24, pady=(0, 28))
 
 menu_buttons = {}
 current_page = "dashboard"
@@ -979,30 +982,56 @@ def build_analyse_text(trame, data):
         f"Résultat : {'CHECKSUM VALIDE' if valid else 'CHECKSUM INVALIDE'}"
     )
 
-def traiter_trame_cnsp(data, trame):
+def traiter_reception_cnsp(data, trame, checksum_ok):
+    """Traite chaque trame candidate, y compris celles rejetées par le checksum."""
     global last_frame_time, trames_recues, checksum_ok_count, last_decode_text, last_trame_brute
+
     trames_recues += 1
     last_frame_time = datetime.now()
-    checksum_calcule = sum(trame[:6]) & 0xFF
-    if checksum_calcule == trame[6]:
+    last_trame_brute = " ".join(f"{b:02X}" for b in trame)
+    set_comm_connected()
+
+    if checksum_ok:
         checksum_ok_count += 1
         label_status_checksum.config(text="Checksum : OK", fg="#22c55e")
     else:
         label_status_checksum.config(text="Checksum : ERREUR", fg="#ef4444")
-    set_comm_connected()
+        last_decode_text = (
+            f"TRAME REJETÉE\n{last_trame_brute}\n\n"
+            "Motif : checksum invalide."
+        )
+        update_all_ui()
+        return
+
+    # Le checksum est valide, mais le décodeur peut encore rejeter la trame
+    # (version non supportée, identifiant invalide, etc.).
+    if data is None:
+        last_decode_text = (
+            f"TRAME REJETÉE\n{last_trame_brute}\n\n"
+            "Motif : format ou version CNSP non supporté."
+        )
+        update_all_ui()
+        return
+
     systeme = data["systeme"]
     if systeme == "INCONNU":
+        last_decode_text = build_analyse_text(trame, data)
+        update_all_ui()
         return
+
     DEFAUTS[systeme] = data["defaut"]
     ETATS[systeme] = data["etat"]
-    last_trame_brute = " ".join(f"{b:02X}" for b in trame)
     last_decode_text = build_analyse_text(trame, data)
     add_recent_alarm(systeme, data["defaut"], data["etat"])
+
     try:
         ajouter_evenement(data["compteur"], systeme, data["defaut"], data["etat"])
+        label_side_db.config(text="● SQLite : connectée", fg="#22c55e")
+        label_status_db.config(text="SQLite OK", fg="#22c55e")
     except Exception:
         label_side_db.config(text="● SQLite : erreur", fg="#ef4444")
         label_status_db.config(text="SQLite ERREUR", fg="#ef4444")
+
     update_all_ui()
 
 def lire_uart_cnsp():
@@ -1021,9 +1050,9 @@ def lire_uart_cnsp():
             if len(buffer) == FRAME_SIZE:
                 trame = bytes(buffer)
                 buffer.clear()
+                checksum_ok = verifier_checksum(trame)
                 data = decoder_trame(trame)
-                if data:
-                    root.after(0, traiter_trame_cnsp, data, trame)
+                root.after(0, traiter_reception_cnsp, data, trame, checksum_ok)
     except serial.SerialException:
         root.after(0, set_comm_lost)
         root.after(0, lambda: label_status_comm.config(text="Communication : port fermé", fg="#ef4444"))
@@ -1053,7 +1082,7 @@ def logout():
 
 def show_login():
     login = tk.Toplevel(root)
-    login.title("ONDA ESA - Connexion")
+    login.title("CNS Supervision Prototype - Connexion")
     login.geometry("460x500")
     login.configure(bg=BG)
     login.resizable(False, False)
@@ -1066,7 +1095,7 @@ def show_login():
     if LOGO_LOGIN is not None:
         tk.Label(login, image=LOGO_LOGIN, bg=BG).pack(pady=(18, 6))
     else:
-        tk.Label(login, text="ONDA ESA", fg="white", bg=BG, font=("Arial", 26, "bold")).pack(pady=(28, 4))
+        tk.Label(login, text="CNS PROTOTYPE", fg="white", bg=BG, font=("Arial", 26, "bold")).pack(pady=(28, 4))
 
     tk.Label(login, text="Plateforme de supervision CNS", fg=MUTED, bg=BG, font=("Arial", 12, "bold")).pack(pady=(0, 14))
     form = tk.Frame(login, bg=PANEL, highlightbackground=BORDER, highlightthickness=1)
@@ -1094,7 +1123,7 @@ def show_login():
             entry_pass.focus_set()
 
     tk.Button(form, text="Se connecter", command=verifier_login, bg=BLUE, fg="white", activebackground="#1d4ed8", activeforeground="white", relief="flat", font=("Arial", 11, "bold"), pady=8).pack(fill="x", padx=18, pady=(10, 18))
-    tk.Label(login, text="Compte de démonstration : permanent / esa123", fg="#64748b", bg=BG, font=("Arial", 9)).pack(pady=10)
+    tk.Label(login, text=f"Compte de démonstration : {AUTH_USER} / {AUTH_PASSWORD}", fg="#64748b", bg=BG, font=("Arial", 9)).pack(pady=10)
     entry_pass.focus_set()
     login.bind("<Return>", verifier_login)
     login.protocol("WM_DELETE_WINDOW", root.destroy)
@@ -1118,10 +1147,10 @@ def show_splash():
     if LOGO_FULL is not None:
         tk.Label(frame, image=LOGO_FULL, bg=PANEL).pack(pady=(22, 8))
     else:
-        tk.Label(frame, text="ONDA", fg="white", bg=PANEL, font=("Arial", 28, "bold")).pack(pady=(30, 8))
+        tk.Label(frame, text="CNS PROTOTYPE", fg="white", bg=PANEL, font=("Arial", 28, "bold")).pack(pady=(30, 8))
 
     tk.Label(frame, text="Plateforme de supervision des systèmes CNS", fg="white", bg=PANEL, font=("Arial", 14, "bold")).pack()
-    tk.Label(frame, text="Aéroport Fès-Saïss · Projet de stage", fg=MUTED, bg=PANEL, font=("Arial", 10, "bold")).pack(pady=(6, 0))
+    tk.Label(frame, text="Projet de stage · Données représentatives", fg=MUTED, bg=PANEL, font=("Arial", 10, "bold")).pack(pady=(6, 0))
     tk.Label(frame, text="Version 1.0", fg="#60a5fa", bg=PANEL, font=("Consolas", 10, "bold")).pack(pady=(8, 0))
 
     status = tk.Label(frame, text="Initialisation...", fg=MUTED, bg=PANEL, font=("Arial", 10, "bold"))
