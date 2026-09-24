@@ -18,3 +18,17 @@ dist/
 
 .DS_Store
 Thumbs.db
+# STM32CubeIDE
+Debug/
+Release/
+.settings/
+.metadata/
+*.launch
+
+# STM32 build outputs
+*.o
+*.d
+*.elf
+*.bin
+*.hex
+*.map
