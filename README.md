@@ -13,7 +13,7 @@ The Python application provides real-time visualization of CNS equipment states,
 
 > The screenshot below was taken without the STM32 board connected, which explains the communication loss indicator displayed by the application.
 
-![CNS Supervision Dashboard](tableau%20de%20bord%20de%20supervision.png)
+![CNS Supervision Dashboard](supervision-dashboard.png)
 
 ## 🎯 Project Objective
 
