@@ -6,7 +6,7 @@ The STM32 generates representative CNS equipment states and transmits them throu
 
 The Python application receives and decodes the frames, updates the supervision interface and stores events in a local SQLite database.
 
-![CNS Supervision System Architecture](architecture-cns.png)
+![CNS Supervision System Architecture](architecture-cns.png.png)
 
 ---
 
